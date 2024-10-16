@@ -22,12 +22,22 @@ def generate_code(prompt, max_length=1024):
         max_length=max_length,     # Generate up to max_length tokens (input + output)
         num_return_sequences=1,    # Generate n sequences
         do_sample=True,            # Enable sampling for more diversity (instead of greedy decoding)
-        temperature=0.7            # Slight randomness for more creative output
+        temperature=0.7,           # Slight randomness for more creative output
+        pad_token_id=tokenizer.eos_token_id,
+        eos_token_id=tokenizer.encode("```")[0]
     )
     
     generated_code = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return generated_code
 
-prompt = "Write a Python function to reverse a string"
+prompt = """
+You are a code generation assistant. Your task is to generate Python code snippets based on given instructions. Only output the code itself, without any explanations or additional text.
+
+Instruction: Write a Python function to calculate the factorial of a number.
+
+Code:
+```python
+"""
+
 generated_code = generate_code(prompt)
 print(generated_code)
