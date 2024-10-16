@@ -1,7 +1,7 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct" 
+model_name = "meta-llama/Llama-3.2-1B-Instruct" 
 
 # Load the tokenizer and the model
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -15,7 +15,7 @@ print(device)
 model.to(device)
 
 # Function to generate code
-def generate_code(prompt, max_length=200):
+def generate_code(prompt, max_length=1024):
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
     outputs = model.generate(
         inputs['input_ids'],       # The tokenized prompt input
