@@ -1,5 +1,6 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+import re
 
 model_name = "meta-llama/Llama-3.2-1B-Instruct" 
 
@@ -14,6 +15,8 @@ else:
 print(device)
 model.to(device)
 
+tokenizer.eos_token_id = 14196 #74694
+
 # Function to generate code
 def generate_code(prompt, max_length=1024):
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
@@ -24,20 +27,24 @@ def generate_code(prompt, max_length=1024):
         do_sample=True,            # Enable sampling for more diversity (instead of greedy decoding)
         temperature=0.7,           # Slight randomness for more creative output
         pad_token_id=tokenizer.eos_token_id,
-        eos_token_id=tokenizer.encode("```")[0]
+        eos_token_id=tokenizer.eos_token_id
     )
-    
     generated_code = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return generated_code
 
 prompt = """
-You are a code generation assistant. Your task is to generate Python code snippets based on given instructions. Only output the code itself, without any explanations or additional text.
-
-Instruction: Write a Python function to calculate the factorial of a number.
+Instruction: Write a Python function to rotate a list of numbers. Write one
+test case to invoke the function with parameters at the end within the same
+code block.
 
 Code:
 ```python
 """
 
 generated_code = generate_code(prompt)
-print(generated_code)
+
+pattern = r"```python\s*(.*?)\s*``"
+matches = re.findall(pattern, generated_code, re.DOTALL)
+print(matches[0])
+print("==============")
+exec(matches[0])
