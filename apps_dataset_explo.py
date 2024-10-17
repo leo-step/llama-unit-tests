@@ -2,6 +2,7 @@ from datasets import load_dataset
 import json
 import sys
 import io
+import re
 
 ds = load_dataset("codeparrot/apps", split="train")
 
@@ -63,6 +64,19 @@ def wrap_in_function(code: str, function_name: str = 'run_code'):
     return wrapped_code
 
 
+def format_numbers_in_string(input_string, decimals=5):
+    # This regex finds both integers and float numbers
+    number_pattern = re.compile(r'(-?\d+\.?\d*)')
+
+    def format_number(match):
+        # Convert the found string to float and format it with 9 decimal places
+        return f"{float(match.group()):.{decimals}f}"
+
+    # Replace all occurrences of numbers with formatted ones
+    formatted_string = number_pattern.sub(format_number, input_string)
+    return formatted_string
+
+
 for i, sample in enumerate(ds):
     if i == 20:
         exit()
@@ -78,9 +92,11 @@ for i, sample in enumerate(ds):
         inputs = sample["input_output"]["inputs"][0] # all inputs across test cases stacked together
         outputs = sample["input_output"]["outputs"][0] # all outputs across test cases stacked together
         outputs = outputs.strip().replace(" \n", "\n").replace("\n\n", "\n")
+        outputs = format_numbers_in_string(outputs)
         try:
             exec_outputs = exec_with_mocked_io(solution_code, inputs)
             exec_outputs = exec_outputs.strip().replace(" \n", "\n").replace("\n\n", "\n")
+            exec_outputs = format_numbers_in_string(exec_outputs)
 
             if exec_outputs == outputs:
                 print("The outputs match!")
