@@ -1,12 +1,23 @@
 from datasets import load_dataset
 import pandas as pd
+import json
+import sys
+sys.set_int_max_str_digits(100000)
 
 ds = load_dataset("codeparrot/apps", split="train")
 
 samples = []
-
+count = 0
 for sample in ds:
     samples.append(sample)
+    if sample["input_output"]:
+        input_output = json.loads(sample["input_output"])
+        if len(input_output["inputs"]) == 0:
+            continue
+        calls_func = True if input_output.get("fn_name") else False
+        if calls_func:
+            count += 1
+print(count)
     
 df = pd.DataFrame(samples)
 
