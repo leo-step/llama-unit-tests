@@ -9,6 +9,29 @@ import io
 import threading
 from openai_utils import system_prompt, user_prompt, openai_json_response
 import concurrent.futures
+import queue
+import copy
+
+# needed to execute code
+from typing import List, Dict, Tuple, Set, Any, Union, Optional, Callable
+import math
+from math import *
+import collections
+from collections import defaultdict, deque, Counter, OrderedDict
+from collections import *
+import heapq
+from heapq import *
+import functools
+from functools import *
+import itertools
+from itertools import *
+import operator
+import sys
+from sys import *
+import queue
+from queue import *
+import bisect
+from bisect import *
 
 
 def exec_with_mocked_io(code, inputs, timeout=1):
@@ -48,13 +71,37 @@ def exec_with_mocked_io(code, inputs, timeout=1):
     output_capture.seek(0)
     return output_capture.read().strip()
 
+# TODO: make prints shut up by capturing stdout
+def exec_func_with_args(code, func_name, inputs, timeout=1):
+    exception_in_thread = None
+    result_queue = queue.Queue()
 
-def exec_func_with_args(code, inputs):
-    local_scope = {}
-    exec(code, globals(), local_scope)
-    solution = local_scope['Solution']()
-    result = solution.maxScore(*inputs) # name needs to change
-    return result
+    def execute_code():
+        nonlocal exception_in_thread
+        try:
+            local_scope = {}
+            exec(code, globals(), local_scope)
+            solution = local_scope['Solution']()
+            result = getattr(solution, func_name)(*inputs)
+            result_queue.put(result)
+        except Exception as e:
+            exception_in_thread = e
+
+    exec_thread = threading.Thread(target=execute_code)
+    exec_thread.start()
+
+    exec_thread.join(timeout)
+    
+    if exception_in_thread:
+        raise exception_in_thread
+
+    if exec_thread.is_alive():
+        raise Exception(f"Code execution exceeded {timeout} seconds")
+
+    if not result_queue.empty():
+        return result_queue.get()
+
+    return None
 
 
 def wrap_in_function(code: str, function_name: str = 'run_code'):
@@ -85,7 +132,7 @@ def format_inputs(inputs):
 def format_outputs(outputs, allow_multiple_answers, decimals=5):
     if isinstance(outputs, list):
         outputs = '\n'.join(outputs)
-    outputs = outputs.strip().replace(" \n", "\n").replace("\n\n", "\n")
+    outputs = str(outputs).strip().replace(" \n", "\n").replace("\n\n", "\n")
 
     if allow_multiple_answers:
         lines = outputs.split('\n')
@@ -162,10 +209,10 @@ def build(folder_path, split, pct_io_len_cutoff=0.99, max_workers=8):
     stats = lengths.describe(percentiles=[pct_io_len_cutoff])
     io_len_cutoff = int(stats[f"{int(pct_io_len_cutoff*100)}%"])
     
-    num_funcs = 0
-    non_funcs = 0
     for i, sample in enumerate(samples):
         print("Sample", i)
+        if i == 160 or i == 378 or i == 379 or i == 438:
+            continue
         if not sample["input_output"]:
             continue
         if len(str(sample["input_output"])) > io_len_cutoff:
@@ -179,95 +226,47 @@ def build(folder_path, split, pct_io_len_cutoff=0.99, max_workers=8):
         if len(input_output["inputs"]) == 0:
             continue
 
-        if calls_func:
-            num_funcs += 1
-        else:
-            non_funcs += 1
-
         inputs = input_output["inputs"][0]
         outputs = input_output["outputs"][0]
         valid_solutions = []
         
         for j, solution in enumerate(solutions):
             if calls_func:
-                exec_func_with_args(solution, inputs)
-            else:
-                continue
-                outputs = format_outputs(outputs, allow_multiple_answers)
                 try:
-                    solution = wrap_in_function(solution)
-                    inputs = format_inputs(inputs)
-                    exec_outputs = exec_with_mocked_io(solution, inputs, timeout=2)
-                    # print("EXEC", exec_outputs)
+                    outputs = format_outputs(outputs, allow_multiple_answers)
+                    func_name = input_output["fn_name"]
+                    exec_outputs = exec_func_with_args(solution, func_name, inputs, timeout=2)
                     exec_outputs = format_outputs(exec_outputs, allow_multiple_answers)
                     if outputs == exec_outputs:
                         valid_solutions.append(solution)
                     else:
                         raise Exception("the outputs do not match")
                 except Exception as e:
-                    # if "the outputs" in str(e):
-                    #     print("EXCEPTION")
-                    #     print(sample)
-                    #     print(allow_multiple_answers)
-                    #     print(outputs)
-                    #     print("=====================")
-                    #     print(exec_outputs)
-                    #     input()
                     pass
-                    # if i == 77 and j == 16:
-                    #     continue
-                    # if i == 78 and j == 10:
-                    #     continue
-                    # if i == 508 and j == 4:
-                    #     continue
-                    # if i == 508 and j == 17:
-                    #     continue
-                    # if i == 508 and j == 39:
-                    #     continue
-                    # if i == 508 and j == 41:
-                    #     continue
-                    # if i == 508 and j == 78:
-                    #     continue
-                    # if i == 509 and j == 11:
-                    #     continue
-                    # if i == 509 and j == 62:
-                    #     continue
-                    # if i == 511 and j == 9:
-                    #     continue
-                    # if i == 511 and j == 12:
-                    #     continue
-                    # if i == 511 and j == 14:
-                    #     continue
-                    # if ("Code execution" in str(e)):
-                    #     continue
-                    # if ("starred expression" in str(e)):
-                    #     continue
-                    # if ("gcd" in str(e)):
-                    #     continue
-                    # if ("strip" in str(e)):
-                    #     continue
-                    # if ("initial_value" in str(e)):
-                    #     continue
-                    # if ("fileno" in str(e)):
-                    #     continue
-                    # if ("invalid literal" in str(e)):
-                    #     continue
-                    # if ("__future__" in str(e)):
-                    #     continue
-                    # print(f"Sample {i} | Solution {j}:", e)
-                    # print(solution)
-                    # print(outputs)
-                    # print(exec_outputs)
-                    # exit()
-        
-        print("CLEAN SAMPLES", len(clean_samples), "vs", num_funcs)
+                    # if "the outputs" in str(e):
+                    #     print(solution)
+                    #     print(outputs)
+                    #     print(exec_outputs)
+                    #     print(e)
+                        # input()
+            else:
+                try:
+                    outputs = format_outputs(outputs, allow_multiple_answers)
+                    solution = wrap_in_function(solution)
+                    inputs = format_inputs(inputs)
+                    exec_outputs = exec_with_mocked_io(solution, inputs, timeout=2)
+                    exec_outputs = format_outputs(exec_outputs, allow_multiple_answers)
+                    if outputs == exec_outputs:
+                        valid_solutions.append(solution)
+                    else:
+                        raise Exception("the outputs do not match")
+                except Exception as e:
+                    pass
+
         if len(valid_solutions) > 0:
             clean_samples.append({})
-        elif not calls_func:
-            print(i, "has no valid solutions")
-            print(sample)
     
-    print(len(clean_samples), num_funcs)
+    print(len(clean_samples))
 
 if __name__ == "__main__":
     folder_path = "./dataset"
