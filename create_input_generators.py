@@ -1,6 +1,7 @@
 import os
 import json
 from openai_utils import system_prompt, user_prompt, openai_json_response
+from dataset import exec_with_mocked_io
 import random
 
 folder_path = "./dataset"
@@ -25,6 +26,8 @@ def create_input_generator(sample):
         The input generator must print the inputs
         in the right order with print() statements so that they can be consumed
         by the code. Your input function must be initialized as def input_generator(num_test_cases: int).
+        Before you write the input generator, reason through it step by step in a comment before the
+        code. You need to make sure the input generator actually runs and terminates.
         Return only the code of the function with the function signature as a JSON
         with key "code" containing the function source code as a string.'''
     
@@ -37,10 +40,18 @@ def create_input_generator(sample):
         give_question(question, example_solution, example_input)
     ])
 
+    num_test_cases = 3
+    input_generator = f'''{response["code"]}\n\ninput_generator({num_test_cases})'''
+    try:
+        exec_with_mocked_io(input_generator, "")
+    except Exception as e:
+        print("input_generator failed for sample", e)
+        raise e
+
     return response["code"]
 
 # def call_code(code, num_test_cases):
-#     exec(code + f"\n\ninput_generator({num_test_cases})")
+#     exec()
 
 # for filename in os.listdir(data_path):
 #     if filename.endswith(".json"):
@@ -62,13 +73,24 @@ def process_file(filename):
         with open(file_path, 'r', encoding='utf-8') as file:
             sample = json.load(file)
             # Assuming `create_input_generator` is a function you have defined
-            sample['input_generator'] = create_input_generator(sample)
+            try:
+                sample['input_generator'] = create_input_generator(sample)
+            except:
+                try:
+                    sample['input_generator'] = create_input_generator(sample)
+                except:
+                    sample['input_generator'] = ''
+                
         
         # Write the modified content back to the same file
         with open(file_path, 'w', encoding='utf-8') as file:
             json.dump(sample, file, ensure_ascii=False, indent=4)
 
 # Execute in parallel using ThreadPoolExecutor
-with ThreadPoolExecutor(max_workers=16) as executor:
-    filenames = [f for f in os.listdir(data_path) if f.endswith(".json")]
-    executor.map(process_file, filenames)
+# with ThreadPoolExecutor(max_workers=16) as executor:
+#     filenames = [f for f in os.listdir(data_path) if f.endswith(".json")]
+#     executor.map(process_file, filenames)
+
+filenames = [f for f in os.listdir(data_path) if f.endswith(".json")]
+for filename in filenames:
+    process_file(filename)

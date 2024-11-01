@@ -34,13 +34,25 @@ import bisect
 from bisect import *
 
 
-def exec_with_mocked_io(code, inputs, timeout=1):
+def run_exec_silently(code, context):
+    # Save the current stdout
+    original_stdout = sys.stdout
+    # Redirect stdout to a dummy StringIO object
+    sys.stdout = io.StringIO()
+    try:
+        exec(code, context)
+    finally:
+        # Restore the original stdout
+        sys.stdout = original_stdout
+
+
+def exec_with_mocked_io(code, inputs, silent=False, timeout=1):
     original_stdin = sys.stdin
     original_stdout = sys.stdout
     
     input_mock = io.StringIO(inputs)
     output_capture = io.StringIO()
-    
+
     sys.stdin = input_mock
     sys.stdout = output_capture
     
@@ -50,7 +62,10 @@ def exec_with_mocked_io(code, inputs, timeout=1):
         nonlocal exception_in_thread
         try:
             context = {}
-            exec(code, context)
+            if silent:
+                run_exec_silently(code, context)
+            else:
+                exec(code, context)
         except Exception as e:
             exception_in_thread = e 
     
