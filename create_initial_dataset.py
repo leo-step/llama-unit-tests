@@ -189,7 +189,6 @@ def build(folder_path, split, pct_io_len_cutoff=0.99, max_workers=8):
 
     ds = load_dataset("codeparrot/apps", split=split)
     samples = [sample for sample in ds]
-    clean_samples = []
 
     allow_multiple_answers_path = f"./{split}_multiple_answers.json"
 
@@ -232,17 +231,18 @@ def build(folder_path, split, pct_io_len_cutoff=0.99, max_workers=8):
         
         for j, solution in enumerate(solutions):
             if calls_func:
-                try:
-                    outputs = format_outputs(outputs, allow_multiple_answers)
-                    func_name = input_output["fn_name"]
-                    exec_outputs = exec_func_with_args(solution, func_name, inputs, timeout=2)
-                    exec_outputs = format_outputs(exec_outputs, allow_multiple_answers)
-                    if outputs == exec_outputs:
-                        valid_solutions.append(solution)
-                    else:
-                        raise Exception("the outputs do not match")
-                except Exception as e:
-                    pass
+                continue
+                # try:
+                #     outputs = format_outputs(outputs, allow_multiple_answers)
+                #     func_name = input_output["fn_name"]
+                #     exec_outputs = exec_func_with_args(solution, func_name, inputs, timeout=2)
+                #     exec_outputs = format_outputs(exec_outputs, allow_multiple_answers)
+                #     if outputs == exec_outputs:
+                #         valid_solutions.append(solution)
+                #     else:
+                #         raise Exception("the outputs do not match")
+                # except Exception as e:
+                #     pass
                     # if "the outputs" in str(e):
                     #     print(solution)
                     #     print(outputs)
@@ -257,16 +257,35 @@ def build(folder_path, split, pct_io_len_cutoff=0.99, max_workers=8):
                     exec_outputs = exec_with_mocked_io(solution, inputs, timeout=2)
                     exec_outputs = format_outputs(exec_outputs, allow_multiple_answers)
                     if outputs == exec_outputs:
-                        valid_solutions.append(solution)
+                        valid_solutions.append({
+                            "solution": solution,
+                            "inputs": inputs,
+                            "outputs": outputs
+                        })
                     else:
                         raise Exception("the outputs do not match")
                 except Exception as e:
                     pass
 
         if len(valid_solutions) > 0:
-            clean_samples.append({})
-    
-    print(len(clean_samples))
+            inputs = []
+            outputs = []
+            solutions = []
+
+            for data in valid_solutions:
+                inputs.append(data["inputs"])
+                outputs.append(data["outputs"])
+                solutions.append(data["solution"])
+
+            with open(os.path.join(data_path, f"{i}.json"), "w") as fp:
+                json.dump({
+                    "question": sample["question"],
+                    "solutions": solutions,
+                    "inputs": inputs[0],
+                    "outputs": outputs[0],
+                    "has_multiple_answers": allow_multiple_answers,
+                    "difficulty": sample["difficulty"]
+                }, fp)
 
 if __name__ == "__main__":
     folder_path = "./dataset"
