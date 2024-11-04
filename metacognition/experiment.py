@@ -11,3 +11,7 @@
 # then make sure things aren't trivial in the sense that the
 # default test cases don't always catch the inserted bug
 # and the program actually runs most of the time
+
+# just work on building out this environment and evaluating it
+# then you can try training something or finetuning LLM
+# within this environment to make stronger bugs
