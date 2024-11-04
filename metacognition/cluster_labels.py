@@ -84,6 +84,29 @@ for labels in tqdm(cluster_dict.values()):
 with open(output_path, "w") as fp:
     json.dump(combined_cluster_dict, fp)
 
+
+'''
+bug_exemplars.json
+
+{
+    "accumulator_initialization_error": {
+        "description": "... description of what programs could have this error",
+        "embedding": [..., ..., ..., ],
+        "exemplars": [
+            {
+                "incorrect_program": "...",
+                "diff": "..."
+            }
+        ]
+    },
+    ...
+}
+
+
+'''
+
+
+
 # kmeans = KMeans(n_clusters=3, random_state=42)  # Number of clusters set to 3
 # kmeans.fit(tfidf_df)
 
