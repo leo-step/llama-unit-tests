@@ -83,7 +83,7 @@ import pandas as pd
 class LabelBugs(MapReduce):
     def get_items(self):
         data_path = "metacognition/data/python/jsons"
-        file_name = "0.json"
+        file_name = "0.json" # we need to do this on every file!! $12 per file
 
         file_path = os.path.join(data_path, file_name)
         with open(file_path, "r") as fp:
@@ -96,7 +96,7 @@ class LabelBugs(MapReduce):
         return data
     
     def mapF(self, item):
-        incorrect_submission, correct_submission = pair
+        incorrect_submission, correct_submission = item
         differ = difflib.Differ()
         diff = differ.compare(incorrect_submission['code_tokens'].splitlines(), 
                             correct_submission['code_tokens'].splitlines())
@@ -119,7 +119,7 @@ class LabelBugs(MapReduce):
 
 
 job = LabelBugs()
-# job.run()
+job.run()
 
 # cluster skills together using prompt
 
