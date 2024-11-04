@@ -15,6 +15,13 @@ print(df.head())
 
 df['label'] = df['label'].str.replace('_', ' ')
 
+# we can potentially try using OpenAI embeddings to cluster as well, could be better
+# it does look pretty good right now though with Tfidf
+
+# we can also have a scheme where the input function source code gets embedded and then
+# we choose the appropriate bugs to insert (for example if there is no list we can't
+# ask it to do list-based bugs)
+
 vectorizer = TfidfVectorizer()
 tfidf_matrix = vectorizer.fit_transform(df['label'])
 tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=vectorizer.get_feature_names_out())
@@ -36,6 +43,20 @@ plt.title('Elbow Method for Optimal K')
 plt.xlabel('Number of clusters (K)')
 plt.ylabel('WCSS')
 plt.show() # around 160 bug categories
+
+print("How many clusters do you want? ", end="")
+N = int(input())
+
+kmeans = KMeans(n_clusters=N, random_state=seed, n_init='auto')
+df['cluster'] = kmeans.fit_predict(tfidf_df)
+
+df['label'] = df['label'].str.replace(' ', '_')
+
+print(df.head())
+
+cluster_dict = df.groupby('cluster')['label'].apply(list).to_dict()
+with open(output_path, "w") as fp:
+    json.dump(cluster_dict, fp)
 
 # kmeans = KMeans(n_clusters=3, random_state=42)  # Number of clusters set to 3
 # kmeans.fit(tfidf_df)
