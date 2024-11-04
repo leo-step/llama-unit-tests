@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
+from openai_utils import system_prompt, user_prompt, openai_json_response
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -55,8 +56,33 @@ df['label'] = df['label'].str.replace(' ', '_')
 print(df.head())
 
 cluster_dict = df.groupby('cluster')['label'].apply(list).to_dict()
+
+@system_prompt
+def combine_labels():
+    return f'''You will be provided with a list of labels for 
+    different types of code bugs. Reduce the provided labels
+    into a single descriptive label that is an accurate reflection
+    of the overall bug category. Use lowercase letters and underscores
+    instead of spaces when writing out multiple words in the same
+    format as the input. Output the new label using a JSON with the
+    key "label". '''
+
+@user_prompt
+def provide_labels(labels):
+    return f'''{labels}'''
+
+combined_cluster_dict = {}
+
+for labels in tqdm(cluster_dict.values()):
+    response = openai_json_response([
+        combine_labels(),
+        provide_labels(labels)
+    ], model="gpt-4o")
+
+    combined_cluster_dict[response["label"]] = labels
+
 with open(output_path, "w") as fp:
-    json.dump(cluster_dict, fp)
+    json.dump(combined_cluster_dict, fp)
 
 # kmeans = KMeans(n_clusters=3, random_state=42)  # Number of clusters set to 3
 # kmeans.fit(tfidf_df)
