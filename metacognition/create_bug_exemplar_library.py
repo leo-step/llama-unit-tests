@@ -181,6 +181,8 @@ class LabelBugs(MapReduce):
         incorrect_submission, correct_submission = item
         differ = difflib.Differ() # WHICH ORDER DO THE ARGUMENTS GO HERE?
         # BECAUSE YOU CAN MAKE IT SEEMS AS IF THIS IS HOW YOU INTRODUCE THE BUG rather than fixing it
+        # ^^ YOU SHOULD HAVE THE DIFF INTRODUCE THE BUG AND ALSO PROVIDE CORRECT INSTEAD OF INCORRECT PROGRAM
+        # change the prompt to reflect this
         diff = differ.compare(incorrect_submission['code_tokens'].splitlines(), 
                             correct_submission['code_tokens'].splitlines())
         diff_output = '\n'.join(diff)
