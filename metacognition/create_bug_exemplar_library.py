@@ -171,7 +171,7 @@ class LabelBugs(MapReduce):
         with open(file_path, "r") as fp:
             data = json.load(fp)
 
-        def is_valid_pair(pair):
+        def is_valid_pair(pair): # are there other types of errors? e.g. timeout
             return pair[0]["verdict"] == "Wrong Answer" and pair[1]["verdict"] == "Accepted"
 
         data = list(filter(lambda pair: is_valid_pair(pair), data))[:100]
