@@ -1,29 +1,68 @@
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+import json
 
-output_path = "metacognition/outputs/bug_labels.csv"
+input_path = "metacognition/outputs/bug_labels.csv"
+output_path = "metacognition/outputs/clusters.json"
 
-df = pd.read_csv(output_path)
+df = pd.read_csv(input_path)
 
 print(df.head())
-print(len(df["label"].unique())) # 4329 unique, some duplicates
+# print(len(df["label"].unique())) # 4329 unique, some duplicates
+
+df['label'] = df['label'].str.replace('_', ' ')
+
+vectorizer = TfidfVectorizer()
+tfidf_matrix = vectorizer.fit_transform(df['label'])
+tfidf_df = pd.DataFrame(tfidf_matrix.toarray(), columns=vectorizer.get_feature_names_out())
+
+# print(tfidf_df)
+
+seed = 42
+k_values = range(16, 513, 16)
+
+wcss = []
+
+for k in tqdm(k_values):
+    kmeans = KMeans(n_clusters=k, random_state=seed)
+    df['cluster'] = kmeans.fit_predict(tfidf_df)
+    wcss.append(kmeans.inertia_)
+    
+plt.plot(k_values, wcss, marker='o')
+plt.title('Elbow Method for Optimal K')
+plt.xlabel('Number of clusters (K)')
+plt.ylabel('WCSS')
+plt.show() # around 160 bug categories
+
+# kmeans = KMeans(n_clusters=3, random_state=42)  # Number of clusters set to 3
+# kmeans.fit(tfidf_df)
+
+# # Add the cluster labels to the original DataFrame
+# df['cluster'] = kmeans.labels_
 
 # from openai_utils import system_prompt, user_prompt, openai_json_response
 
 # @system_prompt
 # def cluster_labels():
-#     return f'''You will be provided with a buggy piece of code along with
-#     the diff of the bug fix that leads to a correct implementation. Label
-#     this bug with an label that precisely describes the type of bug
-#     that was present. You should be able to use the label as a dictionary
-#     key in Python. The label should be lower case letters only. The 
-#     label should be very descriptive and you may use multiple words to
-#     describe the bug that occurred. If you do use multiple words for the label,
-#     then join them with an underscore.
-    
-#     Your answer should be in JSON format where key "label" corresponds to your
-#     naming of the bug and a second key "reason" contains a short justification
-#     for why you chose the label.'''
+#     return f'''Your job is to cluster a list of bug labels into more concise
+#     list. Reduce the number of unique labels by grouping similar labels into 
+#     categories and give a descriptive name to each category (in a similar format
+#     to the original labels). Output a JSON where the keys are the new labels
+#     and the values are arrays of the labels that fall into that cluster.'''
 
 # @user_prompt
-# def provide_labels(code_tokens, diff_output):
-#     return f'''Buggy solution:\n{code_tokens}\n\nBug fix:\n{diff_output}'''
+# def provide_labels(labels):
+#     return f'''{str(labels)}'''
+
+# # print(provide_labels(list(df["label"].values)))
+# # exit()
+# response = openai_json_response([
+#     cluster_labels(),
+#     provide_labels(list(df["label"].values))
+# ], model="gpt-4o")
+
+# with open(output_path, "w") as fp:
+#     json.dump(response, fp)
