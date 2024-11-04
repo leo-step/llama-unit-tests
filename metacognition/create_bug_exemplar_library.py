@@ -47,6 +47,11 @@ def user_prompt(func):
         }
     return wrapper
 
+def get_embedding(query_text, model="text-embedding-3-large", dimensions=256):
+   query_text = query_text.replace("\n", " ")
+   return openai_client.embeddings.create(input = [query_text], 
+                    model=model, dimensions=dimensions).data[0].embedding
+
 def openai_json_response(messages, model="gpt-4o-mini", temp=1, max_tokens=1024):
     response = openai_client.chat.completions.create(
         model=model,
@@ -84,6 +89,22 @@ def label_bug_with_reason():
 def provide_bug(code_tokens, diff_output):
     return f'''Buggy solution:\n{code_tokens}\n\nBug fix:\n{diff_output}'''
 
+@system_prompt
+def combine_labels_and_describe():
+    return f'''You will be provided with a list of labels for 
+    different types of code bugs. Reduce the provided labels
+    into a single descriptive label that is an accurate reflection
+    of the overall bug category. Use lowercase letters and underscores
+    instead of spaces when writing out multiple words in the same
+    format as the input. Output the new label using a JSON with the
+    key "label" and also provide a key "description" which outlines
+    the types of logic or operations or implementation details that
+    a Python program would have for this category of bugs to be
+    potentially present.'''
+
+@user_prompt
+def provide_labels(labels):
+    return f'''{labels}'''
 
 # =============== THREADING UTILITY ===============
 
@@ -137,19 +158,23 @@ class MapReduce:
 # =============== LABELING JOBS ===============
 
 class LabelBugs(MapReduce):
-    def get_items(self, data_path: str):
+    def __init__(self, data_path: str):
+        super().__init__()
+        self.data_path = data_path
+
+    def get_items(self):
         file_name = "0.json" 
         # we need to do this on every file!! $12 per file
         # probably best to combine all files and then randomly sample however much we want
 
-        file_path = os.path.join(data_path, file_name)
+        file_path = os.path.join(self.data_path, file_name)
         with open(file_path, "r") as fp:
             data = json.load(fp)
 
         def is_valid_pair(pair):
             return pair[0]["verdict"] == "Wrong Answer" and pair[1]["verdict"] == "Accepted"
 
-        data = list(filter(lambda pair: is_valid_pair(pair), data))
+        data = list(filter(lambda pair: is_valid_pair(pair), data))[:100]
         return data
     
     def mapF(self, item):
@@ -214,17 +239,46 @@ def perform_clustering_with_elbow(labels_and_data, seed, k_values):
 if __name__ == "__main__":
     # make this into command line argument
     data_path = "metacognition/data/python/jsons"
+    labels_and_data_path = "metacognition/outputs/labels_and_data.json"
+    cluster_df_path = "metacognition/outputs/clustered.csv"
+    output_path = "metacognition/outputs/library.json"
 
     job = LabelBugs(data_path)
     labels_and_data = job.run()
-    # save json data
+    with open(labels_and_data_path, "w") as fp:
+        json.dump(labels_and_data, fp)
 
     seed = 42
-    k_values = range(16, 513, 16)
+    k_values = range(16, min(len(labels_and_data), 513), 16)
 
-    perform_clustering_with_elbow(labels_and_data, seed, k_values)
+    df = perform_clustering_with_elbow(labels_and_data, seed, k_values)
+    df.to_csv(cluster_df_path)
 
-    # cluster_dict = df.groupby('cluster')['label'].apply(list).to_dict()
+    bug_exemplars = {}
+
+    label_groupby = df.groupby('cluster')['label'].apply(list).to_dict()
+    for labels in tqdm(label_groupby.values()):
+        response = openai_json_response([
+            combine_labels_and_describe(),
+            provide_labels(labels)
+        ], model="gpt-4o")
+
+        cluster_label = response["label"]
+        cluster_description = response["description"]
+        embedding = get_embedding(cluster_description)
+        exemplars = df[df["label"].isin(labels)][["incorrect_program", "diff"]].to_dict("records")
+
+        bug_exemplars[cluster_label] = {
+            "description": cluster_description,
+            "embedding": embedding,
+            "exemplars": exemplars
+        }
+
+    with open(output_path, "w") as fp:
+        json.dump(bug_exemplars, fp)
+
+    
+
 
 '''
 bug_exemplars.json
