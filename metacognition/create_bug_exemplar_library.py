@@ -3,6 +3,9 @@ from openai import OpenAI
 import json
 import os
 import difflib
+import random
+
+random.seed(42)
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -72,10 +75,10 @@ def openai_json_response(messages, model="gpt-4o-mini", temp=1, max_tokens=1024)
 
 @system_prompt
 def label_bug_with_reason():
-    return f'''You will be provided with a buggy piece of code along with
-    the diff of the bug fix that leads to a correct implementation. Label
-    this bug with an label that precisely describes the type of bug
-    that was present. You should be able to use the label as a dictionary
+    return f'''You will be provided with a correct piece of code along with
+    a diff that inserts a bug into the code that makes it incorrect. 
+    Label this bug with an label that precisely describes the type of bug
+    that got introduced. You should be able to use the label as a dictionary
     key in Python. The label should be lower case letters only. The 
     label should be very descriptive and you may use multiple words to
     describe the bug that occurred. If you do use multiple words for the label,
@@ -87,7 +90,7 @@ def label_bug_with_reason():
 
 @user_prompt
 def provide_bug(code_tokens, diff_output):
-    return f'''Buggy solution:\n{code_tokens}\n\nBug fix:\n{diff_output}'''
+    return f'''Correct code:\n{code_tokens}\n\nBug insertion:\n{diff_output}'''
 
 @system_prompt
 def combine_labels_and_describe():
@@ -158,33 +161,33 @@ class MapReduce:
 # =============== LABELING JOBS ===============
 
 class LabelBugs(MapReduce):
-    def __init__(self, data_path: str):
+    def __init__(self, data_path: str, n_samples=10000):
         super().__init__()
         self.data_path = data_path
+        self.n_samples = n_samples
 
     def get_items(self):
-        file_name = "0.json" 
-        # we need to do this on every file!! $12 per file
-        # probably best to combine all files and then randomly sample however much we want
+        file_names = [f"{i}.json" for i in range(116)] 
+        data = []
 
-        file_path = os.path.join(self.data_path, file_name)
-        with open(file_path, "r") as fp:
-            data = json.load(fp)
+        for file_name in file_names:
+            file_path = os.path.join(self.data_path, file_name)
+            with open(file_path, "r") as fp:
+                data.extend(json.load(fp))
 
-        def is_valid_pair(pair): # are there other types of errors? e.g. timeout
-            return pair[0]["verdict"] == "Wrong Answer" and pair[1]["verdict"] == "Accepted"
+        def is_valid_pair(pair): # are there other types of errors? 
+            # e.g. timeout; i think we only care about wrong answer right now
+            return len(pair) == 2 and pair[0]["verdict"] == "Wrong Answer" and pair[1]["verdict"] == "Accepted"
 
-        data = list(filter(lambda pair: is_valid_pair(pair), data))[:100]
-        return data
+        data = list(filter(lambda pair: is_valid_pair(pair), data))
+        
+        return random.sample(data, self.n_samples)
     
     def mapF(self, item):
         incorrect_submission, correct_submission = item
-        differ = difflib.Differ() # WHICH ORDER DO THE ARGUMENTS GO HERE?
-        # BECAUSE YOU CAN MAKE IT SEEMS AS IF THIS IS HOW YOU INTRODUCE THE BUG rather than fixing it
-        # ^^ YOU SHOULD HAVE THE DIFF INTRODUCE THE BUG AND ALSO PROVIDE CORRECT INSTEAD OF INCORRECT PROGRAM
-        # change the prompt to reflect this
-        diff = differ.compare(incorrect_submission['code_tokens'].splitlines(), 
-                            correct_submission['code_tokens'].splitlines())
+        differ = difflib.Differ() # reversed order to seem as if bug is being introduced
+        diff = differ.compare(correct_submission['code_tokens'].splitlines(), 
+                              incorrect_submission['code_tokens'].splitlines())
         diff_output = '\n'.join(diff)
 
         response = openai_json_response([
@@ -195,6 +198,7 @@ class LabelBugs(MapReduce):
         return {
             "label": response["label"],
             "reason": response["reason"],
+            "correct_program": correct_submission['code_tokens'],
             "incorrect_program": incorrect_submission['code_tokens'],
             "diff": diff_output
         }
@@ -240,12 +244,40 @@ def perform_clustering_with_elbow(labels_and_data, seed, k_values):
 
 if __name__ == "__main__":
     # make this into command line argument
+    # file_names = [f"{i}.json" for i in range(116)] 
+    # data = []
+
+    # for file_name in file_names:
+    #     file_path = os.path.join("metacognition/data/python/jsons", file_name)
+    #     with open(file_path, "r") as fp:
+    #         data.extend(json.load(fp))
+
+    # verdicts = []
+    # for pair in data:
+    #     if len(pair) == 2:
+    #         verdict = pair[0]["verdict"]
+    #         verdicts.append(verdict)
+
+    # from collections import Counter
+
+    # # {'Wrong Answer': 668298, 'Runtime Error': 277262, 
+    # #  'WA: Presentation Error': 4474, 'Time Limit Exceeded': 208362, 
+    # #  'Memory Limit Exceeded': 876, 'Output Limit Exceeded': 17, 
+    # #  'Internal error': 24, 'Judge Not Available': 28, 'Judge System Error': 8, 
+    # #  'Query Limit Exceeded': 2}
+
+    # # we will focus on wrong answers
+
+    # print(dict(Counter(verdicts)))
+
+    # exit()
+
     data_path = "metacognition/data/python/jsons"
     labels_and_data_path = "metacognition/outputs/labels_and_data.json"
     cluster_df_path = "metacognition/outputs/clustered.csv"
     output_path = "metacognition/outputs/library.json"
 
-    job = LabelBugs(data_path)
+    job = LabelBugs(data_path, n_samples=1000)
     labels_and_data = job.run()
     with open(labels_and_data_path, "w") as fp:
         json.dump(labels_and_data, fp)
@@ -268,7 +300,7 @@ if __name__ == "__main__":
         cluster_label = response["label"]
         cluster_description = response["description"]
         embedding = get_embedding(cluster_description)
-        exemplars = df[df["label"].isin(labels)][["incorrect_program", "diff"]].to_dict("records")
+        exemplars = df[df["label"].isin(labels)].to_dict("records")
 
         bug_exemplars[cluster_label] = {
             "description": cluster_description,
