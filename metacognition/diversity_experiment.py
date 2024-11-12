@@ -2,6 +2,7 @@ import json
 import replicate
 from dotenv import load_dotenv
 import re
+import difflib
 
 load_dotenv()
 
@@ -43,6 +44,13 @@ perturbed_code = matches[0]
 
 print("================")
 print(perturbed_code)
+
+differ = difflib.Differ() # reversed order to seem as if bug is being introduced
+diff = differ.compare(solution.splitlines(), 
+                        perturbed_code.splitlines())
+diff_output = '\n'.join(diff)
+print("================")
+print(diff_output)
 
 # 3. describe the program first and embed and then use bug library to insert 100 bugs and save results
 # 4. see if diversity increases (how?)
