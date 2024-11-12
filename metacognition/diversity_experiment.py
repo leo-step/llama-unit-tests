@@ -22,7 +22,9 @@ print(question)
 print("================")
 print(solution)
 
-# using replicate llama 3
+# using replicate llama 3, one reason to do this instead of openai is that it can be finetuned
+# but if i'm just building the dataset, can I just use the openai model?
+
 # 2. use a baseline prompt to insert 100 bugs into it and save results
 # prefill = "```"
 # stop_sequence = "```"
@@ -99,6 +101,13 @@ for bug_exemplar in bugs_with_exemplar:
     print("\n")
 
 # 4. see if diversity increases (how?)
+
+# by line numbers modified
+# by edit distance from the original
+# by diversity of inserted tokens
+# by trying to retroactively cluster baseline into library categories
+# % successfully evading the provided test case for APPS
+
 # 5. describe the program line by line, then select range of lines, use that for the description
 # insert bug only in those lines, see if diversity increases
 # 6. see how often the base test case passes
