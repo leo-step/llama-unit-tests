@@ -47,3 +47,7 @@ def openai_json_response(messages, model="gpt-4o-mini", temp=1, max_tokens=1024)
         }
     )
     return json.loads(response.choices[0].message.content)
+
+def get_embedding(query_text, model="text-embedding-3-large", dimensions=256):
+   query_text = query_text.replace("\n", " ")
+   return openai_client.embeddings.create(input = [query_text], model=model, dimensions=dimensions).data[0].embedding
