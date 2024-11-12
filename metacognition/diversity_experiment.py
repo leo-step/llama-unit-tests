@@ -61,53 +61,65 @@ print(solution)
 
 # 3. describe the program first and embed and then use bug library to insert 100 bugs and save results
 
-input = {
-    "prompt": f'''{solution}\n\nDescribe the program above, focusing on implementation details and code concepts being used (e.g. arrays, loops, etc.). Be concise with your response.''',
-    "max_new_tokens": 512,
-    "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>",
-    "stop_sequences": "<|end_of_text|>,<|eot_id|>"
-}
+# probably use OpenAI for dataset usage
 
-response = replicate.run(
-    "meta/meta-llama-3-8b-instruct",
-    input=input
-)
-response = ''.join(response)
-embedding = get_embedding(response)
+# input = {
+#     "prompt": f'''{solution}\n\nDescribe the program above, focusing on implementation details and code concepts being used (e.g. arrays, loops, etc.). Be concise with your response.''',
+#     "max_new_tokens": 512,
+#     "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>",
+#     "stop_sequences": "<|end_of_text|>,<|eot_id|>"
+# }
 
-class BugLibrary:
-    def __init__(self, path="metacognition/outputs/library.json"):
-        with open(path, "r") as fp:
-            library = json.load(fp)
+# response = replicate.run(
+#     "meta/meta-llama-3-8b-instruct",
+#     input=input
+# )
+# response = ''.join(response)
+# embedding = get_embedding(response)
 
-        for key, data in library.items():
-            data["bug_cluster"] = key
-            data["embedding"] = np.array(data["embedding"])
+# class BugLibrary:
+#     def __init__(self, path="metacognition/outputs/library.json"):
+#         with open(path, "r") as fp:
+#             library = json.load(fp)
 
-        self.library = library
+#         for key, data in library.items():
+#             data["bug_cluster"] = key
+#             data["embedding"] = np.array(data["embedding"])
 
-    def get_top_k_bugs(self, query_vec, k):
-        return sorted(list(self.library.values()), key=lambda x: np.dot(x["embedding"], query_vec))[-k:]
+#         self.library = library
 
-library = BugLibrary()
-top_k_bugs = library.get_top_k_bugs(embedding, k=5)
-bugs_with_exemplar = list(map(lambda x: (x["bug_cluster"], random.choice(x["exemplars"])), top_k_bugs))
+#     def get_top_k_bugs(self, query_vec, k):
+#         return sorted(list(self.library.values()), key=lambda x: np.dot(x["embedding"], query_vec))[-k:]
 
-print("================")
-for bug_exemplar in bugs_with_exemplar:
-    print(bug_exemplar[0])
-    print("---------")
-    print(bug_exemplar[1]["diff"])
-    print("\n")
+# library = BugLibrary()
+# top_k_bugs = library.get_top_k_bugs(embedding, k=5)
+# bugs_with_exemplar = list(map(lambda x: (x["bug_cluster"], random.choice(x["exemplars"])), top_k_bugs))
+
+# print("================")
+# for bug_exemplar in bugs_with_exemplar:
+#     print(bug_exemplar[0])
+#     print("---------")
+#     print(bug_exemplar[1]["diff"])
+#     print("\n")
 
 # 4. see if diversity increases (how?)
 
 # by line numbers modified
+
 # by edit distance from the original
-# by diversity of inserted tokens
-# by trying to retroactively cluster baseline into library categories
+# Compute the Levenshtein distance, Hamming distance, 
+# or AST-based edit distance between each pair of perturbed versions. 
+# Analyze the distribution of these distances (e.g., mean, standard deviation) to measure 
+# how different the perturbations are.
+
+# by diversity of inserted tokens (trying to retroactively cluster baseline into library categories)
+
 # % successfully evading the provided test case for APPS
 
-# 5. describe the program line by line, then select range of lines, use that for the description
-# insert bug only in those lines, see if diversity increases
+# 5. # insert bug only in those lines, see if diversity increases
+# basically just select a range of lines, then describe and embed like before, and then direct
+# bug insertion to happen to those lines only
+
+
+
 # 6. see how often the base test case passes
