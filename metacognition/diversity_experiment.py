@@ -9,98 +9,138 @@ import random
 
 load_dotenv()
 
-# 1. take one program from apps
-sample_path = "./dataset/train/729.json"
 
-with open(sample_path, "r") as fp:
-    sample = json.load(fp)
+class BugLibrary:
+    def __init__(self, path="metacognition/outputs/library.json"):
+        with open(path, "r") as fp:
+            library = json.load(fp)
 
-question = sample["question"]
-solution = sample["solutions"][0]
+        for key, data in library.items():
+            data["bug_cluster"] = key
+            data["embedding"] = np.array(data["embedding"])
 
-print(question)
-print("================")
-print(solution)
+        self.library = library
 
-# using replicate llama 3, one reason to do this instead of openai is that it can be finetuned
-# but if i'm just building the dataset, can I just use the openai model?
+    def get_top_k_bugs(self, query_vec, k):
+        return sorted(list(self.library.values()), key=lambda x: np.dot(x["embedding"], query_vec))[-k:]
 
-# 2. use a baseline prompt to insert 100 bugs into it and save results
-# prefill = "```"
-# stop_sequence = "```"
 
-# input = {
-#     "prompt": f'''Question:\n{question}\n\nSolution:\n{solution}\n\n\nTake the code above and return it having inserted a subtle bug.''',
-#     "max_new_tokens": 512,
-#     "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n" + prefill,
-#     "stop_sequences": "<|end_of_text|>,<|eot_id|>," + stop_sequence
-# }
+class BugInsertionModel:
+    def __init__(self, model: str, library: BugLibrary):
+        self.model = model
+        self.library = library
 
-# response = replicate.run(
-#     "meta/meta-llama-3-8b-instruct",
-#     input=input
-# )
+    def __describe_program(self, program: str):
+        raise NotImplementedError
 
-# generated_code = prefill + ''.join(response) + stop_sequence
+    def insert_bug(self, program: str, use_exemplars=False, k=5):
+        raise NotImplementedError
 
-# pattern = r"```python\s*(.*?)\s*``"
-# matches = re.findall(pattern, generated_code, re.DOTALL)
-# perturbed_code = matches[0]
 
-# print("================")
-# print(perturbed_code)
+class OpenAIBugInsertion(BugInsertionModel):
+    def __init__(self, model: str, library: BugLibrary):
+        super().__init__(model, library)
 
-# differ = difflib.Differ() # reversed order to seem as if bug is being introduced
-# diff = differ.compare(solution.splitlines(), 
-#                         perturbed_code.splitlines())
-# diff_output = '\n'.join(diff)
-# print("================")
-# print(diff_output)
 
-# code to execute on default test case
+class ReplicateBugInsertion(BugInsertionModel):
+    def __init__(self, model: str, library: BugLibrary):
+        super().__init__(model, library)
 
-# 3. describe the program first and embed and then use bug library to insert 100 bugs and save results
+    def __describe_program(self, program: str):
+        input = {
+            "prompt": f'''{program}\n\nDescribe the program above, focusing on implementation details 
+            and code concepts being used (e.g. arrays, loops, etc.). Be concise with your response.''',
+            "max_new_tokens": 2048,
+            "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>",
+            "stop_sequences": "<|end_of_text|>,<|eot_id|>"
+        }
 
-# probably use OpenAI for dataset usage
+        response = replicate.run(
+            self.model,
+            input=input
+        )
+        response = ''.join(response)
+        return response
+    
+    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5):
+        if not use_exemplars: # baseline
+            prefill = "```"
+            stop_sequence = "```"
 
-# input = {
-#     "prompt": f'''{solution}\n\nDescribe the program above, focusing on implementation details and code concepts being used (e.g. arrays, loops, etc.). Be concise with your response.''',
-#     "max_new_tokens": 512,
-#     "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>",
-#     "stop_sequences": "<|end_of_text|>,<|eot_id|>"
-# }
+            input = {
+                "prompt": f'''Question:\n{question}\n\nSolution:\n{solution}\n\n
+                Take the code above and return it having inserted a subtle bug.''',
+                "max_new_tokens": 2048,
+                "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n" + prefill,
+                "stop_sequences": "<|end_of_text|>,<|eot_id|>," + stop_sequence
+            }
 
-# response = replicate.run(
-#     "meta/meta-llama-3-8b-instruct",
-#     input=input
-# )
-# response = ''.join(response)
-# embedding = get_embedding(response)
+            response = replicate.run(
+                self.model,
+                input=input
+            )
 
-# class BugLibrary:
-#     def __init__(self, path="metacognition/outputs/library.json"):
-#         with open(path, "r") as fp:
-#             library = json.load(fp)
+            generated_code = prefill + ''.join(response) + stop_sequence
 
-#         for key, data in library.items():
-#             data["bug_cluster"] = key
-#             data["embedding"] = np.array(data["embedding"])
+            pattern = r"```python\s*(.*?)\s*``"
+            matches = re.findall(pattern, generated_code, re.DOTALL)
+            perturbed_code = matches[0]
+            return perturbed_code
+        else: # using top k exemplars
+            program_description = self.__describe_program(solution)
+            embedding = get_embedding(program_description)
+            top_k_bugs = self.library.get_top_k_bugs(embedding, k=k)
+            bugs_with_exemplar = list(map(lambda x: (x["bug_cluster"], random.choice(x["exemplars"])), top_k_bugs))
+            exemplars = []
+            for bug_exemplar in bugs_with_exemplar:
+                exemplars.append(f'''Bug category: {bug_exemplar[0]}\nExample:\n{bug_exemplar[1]["diff"]}''')
+            exemplars = "\n---------\n".join(exemplars)
 
-#         self.library = library
+            prefill = "```"
+            stop_sequence = "```"
 
-#     def get_top_k_bugs(self, query_vec, k):
-#         return sorted(list(self.library.values()), key=lambda x: np.dot(x["embedding"], query_vec))[-k:]
+            input = {
+                "prompt": f'''Question:\n{question}\nExamples of bugs:\n{exemplars}\nSolution:\n{solution}\n
+                Take the code above and return it having inserted a subtle bug. Refer to the exemplars for 
+                selecting and inserting a specific category of bug.''',
+                "max_new_tokens": 2048,
+                "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n" + prefill,
+                "stop_sequences": "<|end_of_text|>,<|eot_id|>," + stop_sequence
+            }
 
-# library = BugLibrary()
-# top_k_bugs = library.get_top_k_bugs(embedding, k=5)
-# bugs_with_exemplar = list(map(lambda x: (x["bug_cluster"], random.choice(x["exemplars"])), top_k_bugs))
+            response = replicate.run(
+                self.model,
+                input=input
+            )
 
-# print("================")
-# for bug_exemplar in bugs_with_exemplar:
-#     print(bug_exemplar[0])
-#     print("---------")
-#     print(bug_exemplar[1]["diff"])
-#     print("\n")
+            generated_code = prefill + ''.join(response) + stop_sequence
+
+            pattern = r"```python\s*(.*?)\s*``"
+            matches = re.findall(pattern, generated_code, re.DOTALL)
+            perturbed_code = matches[0]
+            return perturbed_code
+        
+
+if __name__ == "__main__":
+    sample_path = "./dataset/train/729.json"
+
+    with open(sample_path, "r") as fp:
+        sample = json.load(fp)
+
+    question = sample["question"]
+    solution = sample["solutions"][0]
+
+    bug_library = BugLibrary()
+    bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
+
+    baseline_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
+    exemplar_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=True)
+
+    print(baseline_perturbed_code)
+    print(exemplar_perturbed_code)
+
+    # code to execute on default test case
+
 
 # 4. see if diversity increases (how?)
 
