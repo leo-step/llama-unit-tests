@@ -4,6 +4,7 @@ import json
 import os
 import difflib
 import random
+import pickle
 
 random.seed(42)
 
@@ -239,45 +240,25 @@ def perform_clustering_with_elbow(labels_and_data, seed, k_values):
 
     df['label'] = df['label'].str.replace(' ', '_')
 
-    return df
+    return df, vectorizer, kmeans
 
 
 if __name__ == "__main__":
-    # make this into command line argument
-    # file_names = [f"{i}.json" for i in range(116)] 
-    # data = []
-
-    # for file_name in file_names:
-    #     file_path = os.path.join("metacognition/data/python/jsons", file_name)
-    #     with open(file_path, "r") as fp:
-    #         data.extend(json.load(fp))
-
-    # verdicts = []
-    # for pair in data:
-    #     if len(pair) == 2:
-    #         verdict = pair[0]["verdict"]
-    #         verdicts.append(verdict)
-
-    # from collections import Counter
-
     # # {'Wrong Answer': 668298, 'Runtime Error': 277262, 
     # #  'WA: Presentation Error': 4474, 'Time Limit Exceeded': 208362, 
     # #  'Memory Limit Exceeded': 876, 'Output Limit Exceeded': 17, 
     # #  'Internal error': 24, 'Judge Not Available': 28, 'Judge System Error': 8, 
     # #  'Query Limit Exceeded': 2}
-
-    # # we will focus on wrong answers
-
-    # print(dict(Counter(verdicts)))
-
-    # exit()
+    n_samples = 1000
 
     data_path = "metacognition/data/python/jsons"
     labels_and_data_path = "metacognition/outputs/labels_and_data.json"
     cluster_df_path = "metacognition/outputs/clustered.csv"
     output_path = "metacognition/outputs/library.json"
+    vectorizer_path = "metacognition/outputs/tfidf_vectorizer.pkl"
+    kmeans_path = "metacognition/outputs/kmeans_model.pkl"
 
-    job = LabelBugs(data_path, n_samples=1000)
+    job = LabelBugs(data_path, n_samples=n_samples)
     labels_and_data = job.run()
     with open(labels_and_data_path, "w") as fp:
         json.dump(labels_and_data, fp)
@@ -285,8 +266,13 @@ if __name__ == "__main__":
     seed = 42
     k_values = range(16, min(len(labels_and_data), 513), 16)
 
-    df = perform_clustering_with_elbow(labels_and_data, seed, k_values)
+    df, vectorizer, kmeans = perform_clustering_with_elbow(labels_and_data, seed, k_values)
     df.to_csv(cluster_df_path)
+    with open(vectorizer_path, "wb") as tfidf_file:
+        pickle.dump(vectorizer, tfidf_file)
+
+    with open(kmeans_path, "wb") as kmeans_file:
+        pickle.dump(kmeans, kmeans_file)
 
     bug_exemplars = {}
 
