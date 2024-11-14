@@ -3,7 +3,8 @@ import replicate
 from dotenv import load_dotenv
 import re
 import difflib
-from openai_utils import get_embedding
+from openai_utils import get_embedding, user_prompt, \
+    system_prompt, openai_json_response
 import numpy as np
 import random
 from difflib import unified_diff
@@ -33,13 +34,65 @@ class BugInsertionModel:
     def __describe_program(self, program: str):
         raise NotImplementedError
 
-    def insert_bug(self, program: str, use_exemplars=False, k=5):
+    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5):
         raise NotImplementedError
 
 
 class OpenAIBugInsertion(BugInsertionModel):
     def __init__(self, model: str, library: BugLibrary):
         super().__init__(model, library)
+
+    def __describe_program(self, program: str):
+        @user_prompt
+        def describe_program(program):
+            return f'''{program}\n\nDescribe the program above, focusing on implementation details 
+            and code concepts being used (e.g. arrays, loops, etc.). Be concise with your response.
+            Return the result in JSON format with key "description" having the value of the description.'''
+        
+        response = openai_json_response([
+            describe_program(program)
+        ], model=self.model, max_tokens=2048) # what model do we want to use here?
+
+        return response["description"]
+    
+    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5):
+        if not use_exemplars:
+            @user_prompt
+            def baseline_perturb(question, solution):
+                return f'''Question:\n{question}\n\nSolution:\n{solution}\n\n
+                Take the code above and return it having inserted a subtle bug.
+                Return the result in JSON format with key "code" having the perturbed code.'''
+            
+            response = openai_json_response([
+                baseline_perturb(question, solution)
+            ], model=self.model, max_tokens=2048)
+
+            return response["code"]
+        
+        else: # using top k exemplars
+            program_description = self.__describe_program(solution)
+            embedding = get_embedding(program_description)
+            top_k_bugs = self.library.get_top_k_bugs(embedding, k=k)
+            bugs_with_exemplar = list(map(lambda x: (x["bug_cluster"], random.choice(x["exemplars"])), top_k_bugs))
+            exemplars = []
+            for bug_exemplar in bugs_with_exemplar:
+                exemplars.append(f'''Bug category: {bug_exemplar[0]}\nExample:\n{bug_exemplar[1]["diff"]}''')
+            exemplars = "\n---------\n".join(exemplars)
+
+            @user_prompt
+            def exemplar_perturb(question, exemplars, solution):
+                return f'''Question:\n{question}\nExamples of bugs:\n{exemplars}\nSolution:\n{solution}\n
+                Take the code above and return it having inserted a subtle bug. Refer to the exemplars for 
+                selecting and inserting a specific category of bug. Choose one type of bug and insert it.
+                Look at a variety of lines and places in the code where you can insert one of the bug types.
+                Return the result in JSON format with key "code" having the perturbed code. ***Return the
+                code itself such that it can be executed, do not return a diff***.'''
+
+            response = openai_json_response([
+                exemplar_perturb(question, exemplars, solution)
+            ], model=self.model, max_tokens=2048)
+
+            return response["code"]
 
 
 class ReplicateBugInsertion(BugInsertionModel):
@@ -102,7 +155,8 @@ class ReplicateBugInsertion(BugInsertionModel):
             input = {
                 "prompt": f'''Question:\n{question}\nExamples of bugs:\n{exemplars}\nSolution:\n{solution}\n
                 Take the code above and return it having inserted a subtle bug. Refer to the exemplars for 
-                selecting and inserting a specific category of bug. Choose one type of bug and insert it.''',
+                selecting and inserting a specific category of bug. Choose one type of bug and insert it.
+                Look at a variety of lines and places in the code where you can insert one of the bug types.''',
                 "max_new_tokens": 2048,
                 "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n" + prefill,
                 "stop_sequences": "<|end_of_text|>,<|eot_id|>," + stop_sequence
@@ -158,7 +212,8 @@ if __name__ == "__main__":
     solution = sample["solutions"][0]
 
     bug_library = BugLibrary()
-    bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
+    bug_insertion_model = OpenAIBugInsertion("gpt-4o", bug_library)
+    # bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
 
     baseline_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
     exemplar_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=True)
@@ -170,6 +225,38 @@ if __name__ == "__main__":
     print(get_modified_lines(solution, exemplar_perturbed_code))
 
     # code to execute on default test case
+
+    
+
+'''
+issue with openai spacing?
+
+        else:
+            ans=[]
+            for i in range(n):
+                ans.append([0]*m)
+            for i in range(n):
+                for j in range(m):
+                    if l[i][j]=='1':
+                        ans[i][j]=0
+                    else:
+                        if (d[i] or e[j]):
+                            ans[i][j]=1
+                        else:
+                            ans[i][j]=2
+            for i in range(n):
+                for j in range(m):
+                    print(ans[i][j],end=" ")
+-                print()
++                    print()
+
+run_code()
+
+[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
+
+^^ look at all these lines modified
+
+'''
 
 
 # 4. see if diversity increases (how?)
