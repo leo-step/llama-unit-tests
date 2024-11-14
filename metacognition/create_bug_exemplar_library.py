@@ -297,12 +297,6 @@ if __name__ == "__main__":
     with open(output_path, "w") as fp:
         json.dump(bug_exemplars, fp)
 
-    
-    # TODO
-    '''When you build skill library, save the vectorizer and 
-    clustering model so that you can run diversity test by 
-    classifying baseline prompt outputs'''
-
 '''
 bug_exemplars.json
 
