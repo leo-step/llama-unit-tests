@@ -6,9 +6,9 @@ import difflib
 from openai_utils import get_embedding
 import numpy as np
 import random
+from difflib import unified_diff
 
 load_dotenv()
-
 
 class BugLibrary:
     def __init__(self, path="metacognition/outputs/library.json"):
@@ -102,7 +102,7 @@ class ReplicateBugInsertion(BugInsertionModel):
             input = {
                 "prompt": f'''Question:\n{question}\nExamples of bugs:\n{exemplars}\nSolution:\n{solution}\n
                 Take the code above and return it having inserted a subtle bug. Refer to the exemplars for 
-                selecting and inserting a specific category of bug.''',
+                selecting and inserting a specific category of bug. Choose one type of bug and insert it.''',
                 "max_new_tokens": 2048,
                 "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n" + prefill,
                 "stop_sequences": "<|end_of_text|>,<|eot_id|>," + stop_sequence
@@ -121,6 +121,33 @@ class ReplicateBugInsertion(BugInsertionModel):
             return perturbed_code
         
 
+def get_modified_lines(original_code, perturbed_code):
+    original_lines = original_code.splitlines()
+    perturbed_lines = perturbed_code.splitlines()
+    
+    diff = unified_diff(original_lines, perturbed_lines, lineterm='')
+    
+    modified_lines = []
+    current_line_number = 0
+
+    for line in diff:
+        if line.startswith('@@'):
+            hunk_info = line.split(' ')[2]
+            start_line, line_count = (
+                map(int, hunk_info[1:].split(',')) if ',' in hunk_info[1:] else (int(hunk_info[1:]), 1)
+            )
+            current_line_number = start_line - 1
+        elif line.startswith('+') and not line.startswith('+++'):
+            current_line_number += 1
+            modified_lines.append(current_line_number)
+        elif line.startswith('-') and not line.startswith('---'):
+            continue
+        elif not line.startswith('-') and not line.startswith('---'):
+            current_line_number += 1
+
+    return modified_lines
+
+
 if __name__ == "__main__":
     sample_path = "./dataset/train/729.json"
 
@@ -137,7 +164,10 @@ if __name__ == "__main__":
     exemplar_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=True)
 
     print(baseline_perturbed_code)
+    print(get_modified_lines(solution, baseline_perturbed_code))
+
     print(exemplar_perturbed_code)
+    print(get_modified_lines(solution, exemplar_perturbed_code))
 
     # code to execute on default test case
 
