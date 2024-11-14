@@ -138,6 +138,8 @@ class ReplicateBugInsertion(BugInsertionModel):
             pattern = r"```python\s*(.*?)\s*``"
             matches = re.findall(pattern, generated_code, re.DOTALL)
             perturbed_code = matches[0]
+
+            # return metadata which includes the category of bug that was inserted + reasoning
             return perturbed_code
         else: # using top k exemplars
             program_description = self.__describe_program(solution)
