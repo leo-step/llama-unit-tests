@@ -3,8 +3,7 @@ import replicate
 from dotenv import load_dotenv
 import re
 import difflib
-from openai_utils import get_embedding, user_prompt, \
-    system_prompt, openai_json_response
+from openai_utils import get_embedding, user_prompt, openai_json_response
 import numpy as np
 import random
 from difflib import unified_diff

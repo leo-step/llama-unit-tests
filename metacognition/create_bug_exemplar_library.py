@@ -277,7 +277,7 @@ if __name__ == "__main__":
     bug_exemplars = {}
 
     label_groupby = df.groupby('cluster')['label'].apply(list).to_dict()
-    for labels in tqdm(label_groupby.values()):
+    for key, labels in tqdm(label_groupby.items()):
         response = openai_json_response([
             combine_labels_and_describe(),
             provide_labels(labels)
@@ -288,7 +288,8 @@ if __name__ == "__main__":
         embedding = get_embedding(cluster_description)
         exemplars = df[df["label"].isin(labels)].to_dict("records")
 
-        bug_exemplars[cluster_label] = {
+        bug_exemplars[key] = {
+            "cluster_label": cluster_label,
             "description": cluster_description,
             "embedding": embedding,
             "exemplars": exemplars
