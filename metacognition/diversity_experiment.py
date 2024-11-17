@@ -3,10 +3,12 @@ import replicate
 from dotenv import load_dotenv
 import re
 import difflib
+from difflib import unified_diff
 from openai_utils import get_embedding, user_prompt, openai_json_response
+from create_bug_exemplar_library import label_bug_with_reason, provide_bug
 import numpy as np
 import random
-from difflib import unified_diff
+import pickle
 
 load_dotenv()
 
@@ -15,11 +17,16 @@ class BugLibrary:
         with open(path, "r") as fp:
             library = json.load(fp)
 
-        for key, data in library.items():
-            data["bug_cluster"] = key
+        for data in library.values():
             data["embedding"] = np.array(data["embedding"])
 
         self.library = library
+
+    def __getitem__(self, key):
+        return self.library[f"{key}"]
+    
+    def __setitem__(self, key, value):
+        self.library[f"{key}"] = value
 
     def get_top_k_bugs(self, query_vec, k):
         return sorted(list(self.library.values()), key=lambda x: np.dot(x["embedding"], query_vec))[-k:]
@@ -33,13 +40,22 @@ class BugInsertionModel:
     def __describe_program(self, program: str):
         raise NotImplementedError
 
-    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5):
+    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5, n=3):
         raise NotImplementedError
 
 
 class OpenAIBugInsertion(BugInsertionModel):
     def __init__(self, model: str, library: BugLibrary):
         super().__init__(model, library)
+
+        vectorizer_path = "metacognition/outputs/tfidf_vectorizer.pkl"
+        kmeans_path = "metacognition/outputs/kmeans_model.pkl"
+
+        with open(vectorizer_path, "rb") as tfidf_file:
+            self.vectorizer = pickle.load(tfidf_file)
+
+        with open(kmeans_path, "rb") as kmeans_file:
+            self.kmeans = pickle.load(kmeans_file)
 
     def __describe_program(self, program: str):
         @user_prompt
@@ -54,7 +70,7 @@ class OpenAIBugInsertion(BugInsertionModel):
 
         return response["description"]
     
-    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5):
+    def insert_bug(self, question: str, solution: str, use_exemplars=False, k=5, n=3):
         if not use_exemplars:
             @user_prompt
             def baseline_perturb(question, solution):
@@ -66,24 +82,41 @@ class OpenAIBugInsertion(BugInsertionModel):
                 baseline_perturb(question, solution)
             ], model=self.model, max_tokens=2048)
 
-            return response["code"]
+            perturbed_code = response["code"]
+
+            differ = difflib.Differ()
+            diff = differ.compare(solution.splitlines(), perturbed_code.splitlines())
+            diff_output = '\n'.join(diff)
+
+            response = openai_json_response([
+                label_bug_with_reason(),
+                provide_bug(perturbed_code, diff_output)
+            ], model="gpt-4o")
+
+            tfidf_vector = self.vectorizer.transform([response["label"]])
+            predicted_cluster_num = self.kmeans.predict(tfidf_vector)[0]
+            cluster_label = self.library[predicted_cluster_num]["cluster_label"]
+
+            return perturbed_code, cluster_label
         
         else: # using top k exemplars
             program_description = self.__describe_program(solution)
             embedding = get_embedding(program_description)
+
             top_k_bugs = self.library.get_top_k_bugs(embedding, k=k)
-            bugs_with_exemplar = list(map(lambda x: (x["bug_cluster"], random.choice(x["exemplars"])), top_k_bugs))
-            exemplars = []
-            for bug_exemplar in bugs_with_exemplar:
-                exemplars.append(f'''Bug category: {bug_exemplar[0]}\nExample:\n{bug_exemplar[1]["diff"]}''')
+            bug_choice = random.choice(top_k_bugs)
+            exemplars = random.sample(bug_choice["exemplars"], n)
+            exemplars = list(map(lambda x: x["diff"], exemplars))
+            
             exemplars = "\n---------\n".join(exemplars)
 
             @user_prompt
             def exemplar_perturb(question, exemplars, solution):
-                return f'''Question:\n{question}\nExamples of bugs:\n{exemplars}\nSolution:\n{solution}\n
-                Take the code above and return it having inserted a subtle bug. Refer to the exemplars for 
-                selecting and inserting a specific category of bug. Choose one type of bug and insert it.
-                Look at a variety of lines and places in the code where you can insert one of the bug types.
+                return f'''Question:\n{question}\nBug category:\n{bug_choice["cluster_label"]}
+                Examples:\n{exemplars}\nSolution:\n{solution}\n
+                Take the code above and return it having the provided category of bug. Refer to the examples for 
+                what this category of bug looks like and how it is inserted. Consider a variety of lines and place
+                the bug into the code in an appropriate place.
                 Return the result in JSON format with key "code" having the perturbed code. ***Return the
                 code itself such that it can be executed, do not return a diff***.'''
 
@@ -91,7 +124,7 @@ class OpenAIBugInsertion(BugInsertionModel):
                 exemplar_perturb(question, exemplars, solution)
             ], model=self.model, max_tokens=2048)
 
-            return response["code"]
+            return response["code"], bug_choice["cluster_label"]
 
 
 class ReplicateBugInsertion(BugInsertionModel):
@@ -137,8 +170,6 @@ class ReplicateBugInsertion(BugInsertionModel):
             pattern = r"```python\s*(.*?)\s*``"
             matches = re.findall(pattern, generated_code, re.DOTALL)
             perturbed_code = matches[0]
-
-            # return metadata which includes the category of bug that was inserted + reasoning
             return perturbed_code
         else: # using top k exemplars
             program_description = self.__describe_program(solution)
@@ -216,13 +247,15 @@ if __name__ == "__main__":
     bug_insertion_model = OpenAIBugInsertion("gpt-4o", bug_library)
     # bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
 
-    baseline_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
-    exemplar_perturbed_code = bug_insertion_model.insert_bug(question, solution, use_exemplars=True)
+    baseline_perturbed_code, baseline_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
+    exemplar_perturbed_code, exemplar_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=True)
 
     print(baseline_perturbed_code)
+    print(baseline_bug_category)
     print(get_modified_lines(solution, baseline_perturbed_code))
 
     print(exemplar_perturbed_code)
+    print(exemplar_bug_category)
     print(get_modified_lines(solution, exemplar_perturbed_code))
 
     # code to execute on default test case
