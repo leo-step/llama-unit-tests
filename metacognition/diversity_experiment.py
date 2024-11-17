@@ -259,7 +259,7 @@ if __name__ == "__main__":
     print(baseline_bug_category)
     print(get_modified_lines(solution, baseline_perturbed_code))
 
-    baseline_outputs = exec_with_mocked_io(baseline_perturbed_code, inputs, timeout=2) # need to use better exec function, see perplexity
+    baseline_outputs = exec_with_mocked_io(baseline_perturbed_code, inputs, timeout=2)
     baseline_passes = outputs == format_outputs(baseline_outputs, allow_multiple_answers)
 
     # print(outputs)

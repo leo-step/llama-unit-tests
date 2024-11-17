@@ -11,6 +11,9 @@ from openai_utils import system_prompt, user_prompt, openai_json_response
 import concurrent.futures
 import queue
 import copy
+import io
+import sys
+from func_timeout import func_timeout, FunctionTimedOut
 
 # needed to execute code
 from typing import List, Dict, Tuple, Set, Any, Union, Optional, Callable
@@ -46,45 +49,34 @@ def run_exec_silently(code, context):
         sys.stdout = original_stdout
 
 
-def exec_with_mocked_io(code, inputs, silent=False, timeout=1):
+def exec_with_mocked_io(code, inputs, timeout=1):
     original_stdin = sys.stdin
     original_stdout = sys.stdout
-    
+
     input_mock = io.StringIO(inputs)
     output_capture = io.StringIO()
 
     sys.stdin = input_mock
     sys.stdout = output_capture
-    
-    exception_in_thread = None
-    
+
     def execute_code():
-        nonlocal exception_in_thread
-        try:
-            context = {}
-            if silent:
-                run_exec_silently(code, context)
-            else:
-                exec(code, context)
-        except Exception as e:
-            exception_in_thread = e 
-    
-    exec_thread = threading.Thread(target=execute_code)
-    exec_thread.start()
+        context = {}
+        exec(code, context)
 
-    exec_thread.join(timeout)
-
-    sys.stdin = original_stdin
-    sys.stdout = original_stdout
-    
-    if exception_in_thread:
-        raise exception_in_thread
-
-    if exec_thread.is_alive():
+    try:
+        func_timeout(timeout, execute_code)
+    except FunctionTimedOut:
         raise Exception(f"Code execution exceeded {timeout} seconds")
+    except Exception as e:
+        raise e
+    finally:
+        # Restore original stdin and stdout
+        sys.stdin = original_stdin
+        sys.stdout = original_stdout
 
     output_capture.seek(0)
     return output_capture.read().strip()
+
 
 # TODO: make prints shut up by capturing stdout
 def exec_func_with_args(code, func_name, inputs, timeout=1):
