@@ -9,6 +9,7 @@ from create_bug_exemplar_library import label_bug_with_reason, provide_bug
 import numpy as np
 import random
 import pickle
+from dataset import exec_with_mocked_io, format_outputs
 
 load_dotenv()
 
@@ -243,22 +244,42 @@ if __name__ == "__main__":
     question = sample["question"]
     solution = sample["solutions"][0]
 
+    inputs = sample["inputs"]
+    outputs = sample["outputs"]
+    allow_multiple_answers = sample["has_multiple_answers"]
+
     bug_library = BugLibrary()
     bug_insertion_model = OpenAIBugInsertion("gpt-4o", bug_library)
     # bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
 
     baseline_perturbed_code, baseline_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
-    exemplar_perturbed_code, exemplar_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=True)
+    exemplar_perturbed_code, exemplar_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=True, n=1)
 
     print(baseline_perturbed_code)
     print(baseline_bug_category)
     print(get_modified_lines(solution, baseline_perturbed_code))
 
+    baseline_outputs = exec_with_mocked_io(baseline_perturbed_code, inputs, timeout=2) # need to use better exec function, see perplexity
+    baseline_passes = outputs == format_outputs(baseline_outputs, allow_multiple_answers)
+
+    # print(outputs)
+    # print("-------------")
+    # print(baseline_outputs)
+
+    print("Passes APPS test case:", baseline_passes)
+
     print(exemplar_perturbed_code)
     print(exemplar_bug_category)
     print(get_modified_lines(solution, exemplar_perturbed_code))
 
-    # code to execute on default test case
+    exemplar_outputs = exec_with_mocked_io(exemplar_perturbed_code, inputs, timeout=2)
+    exemplar_passes = outputs == format_outputs(exemplar_outputs, allow_multiple_answers)
+
+    # print(outputs)
+    # print("-------------")
+    # print(exemplar_outputs)
+
+    print("Passes APPS test case:", exemplar_passes)
 
     
 
@@ -289,6 +310,7 @@ run_code()
 [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41]
 
 ^^ look at all these lines modified
+its the spacing
 
 '''
 
