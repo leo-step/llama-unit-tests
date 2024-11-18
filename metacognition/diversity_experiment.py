@@ -10,6 +10,7 @@ import numpy as np
 import random
 import pickle
 from dataset import exec_with_mocked_io, format_outputs
+import autopep8
 
 load_dotenv()
 
@@ -244,6 +245,9 @@ if __name__ == "__main__":
     question = sample["question"]
     solution = sample["solutions"][0]
 
+    # normalize formatting
+    solution = autopep8.fix_code(solution)
+
     inputs = sample["inputs"]
     outputs = sample["outputs"]
     allow_multiple_answers = sample["has_multiple_answers"]
@@ -254,6 +258,10 @@ if __name__ == "__main__":
 
     baseline_perturbed_code, baseline_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
     exemplar_perturbed_code, exemplar_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=True, n=1)
+
+    # normalize formatting
+    baseline_perturbed_code = autopep8.fix_code(baseline_perturbed_code)
+    exemplar_perturbed_code = autopep8.fix_code(exemplar_perturbed_code)
 
     print(baseline_perturbed_code)
     print(baseline_bug_category)
