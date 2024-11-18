@@ -249,7 +249,7 @@ if __name__ == "__main__":
     # #  'Memory Limit Exceeded': 876, 'Output Limit Exceeded': 17, 
     # #  'Internal error': 24, 'Judge Not Available': 28, 'Judge System Error': 8, 
     # #  'Query Limit Exceeded': 2}
-    n_samples = 1000
+    n_samples = 20000
 
     data_path = "metacognition/data/python/jsons"
     labels_and_data_path = "metacognition/outputs/labels_and_data.json"
@@ -277,7 +277,7 @@ if __name__ == "__main__":
     bug_exemplars = {}
 
     label_groupby = df.groupby('cluster')['label'].apply(list).to_dict()
-    for key, labels in tqdm(label_groupby.items()):
+    for key, labels in tqdm(label_groupby.items()): # 128 clusters
         response = openai_json_response([
             combine_labels_and_describe(),
             provide_labels(labels)
