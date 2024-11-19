@@ -11,6 +11,14 @@ import random
 import pickle
 from dataset import exec_with_mocked_io, format_outputs
 import autopep8
+import os
+import random
+from tqdm import tqdm
+
+def warn(*args, **kwargs):
+    pass
+import warnings
+warnings.warn = warn
 
 load_dotenv()
 
@@ -119,8 +127,9 @@ class OpenAIBugInsertion(BugInsertionModel):
                 Take the code above and return it having the provided category of bug. Refer to the examples for 
                 what this category of bug looks like and how it is inserted. Consider a variety of lines and place
                 the bug into the code in an appropriate place.
-                Return the result in JSON format with key "code" having the perturbed code. ***Return the
-                code itself such that it can be executed, do not return a diff***.'''
+                Return the result in JSON format with key "code" having the perturbed code. 
+                
+                ***IMPORTANT: Do not return a diff! The code must be executable. The provided diff are example only***.'''
 
             response = openai_json_response([
                 exemplar_perturb(question, exemplars, solution)
@@ -237,54 +246,92 @@ def get_modified_lines(original_code, perturbed_code):
 
 
 if __name__ == "__main__":
-    sample_path = "./dataset/train/729.json"
+    directory = "./dataset/train"
+    file_format = ".json"
+    n_samples = 2
+    n_insertions = 20
+    n_attempts = 3
 
-    with open(sample_path, "r") as fp:
-        sample = json.load(fp)
+    matching_files = [os.path.join(directory, file) 
+                      for file in os.listdir(directory) 
+                      if file.endswith(file_format)]
+    
+    results = []
 
-    question = sample["question"]
-    solution = sample["solutions"][0]
+    for sample_path in random.sample(matching_files, n_samples):
+        print(sample_path)
 
-    # normalize formatting
-    solution = autopep8.fix_code(solution)
+        with open(sample_path, "r") as fp:
+            sample = json.load(fp)    
 
-    inputs = sample["inputs"]
-    outputs = sample["outputs"]
-    allow_multiple_answers = sample["has_multiple_answers"]
+        question = sample["question"]
 
-    bug_library = BugLibrary()
-    bug_insertion_model = OpenAIBugInsertion("gpt-4o", bug_library)
-    # bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
+        index = random.randint(0, len(sample["solutions"]) - 1)
+        print(index)
+        solution = sample["solutions"][index]
 
-    baseline_perturbed_code, baseline_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
-    exemplar_perturbed_code, exemplar_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=True, n=1)
+        solution = autopep8.fix_code(solution)
 
-    # normalize formatting
-    baseline_perturbed_code = autopep8.fix_code(baseline_perturbed_code)
-    exemplar_perturbed_code = autopep8.fix_code(exemplar_perturbed_code)
+        inputs = sample["inputs"]
+        outputs = sample["outputs"]
+        allow_multiple_answers = sample["has_multiple_answers"]
 
-    print(baseline_perturbed_code)
-    print(baseline_bug_category)
-    print(get_modified_lines(solution, baseline_perturbed_code))
+        bug_library = BugLibrary()
+        bug_insertion_model = OpenAIBugInsertion("gpt-4o", bug_library)
+        # bug_insertion_model = ReplicateBugInsertion("meta/meta-llama-3-8b-instruct", bug_library)
 
-    baseline_outputs = exec_with_mocked_io(baseline_perturbed_code, inputs, timeout=2)
-    baseline_passes = outputs == format_outputs(baseline_outputs, allow_multiple_answers)
+        for i in tqdm(range(n_insertions)):
+            baseline_results = None
+            exemplar_results = None
 
-    # print(outputs)
-    # print("-------------")
-    # print(baseline_outputs)
+            for attempt in range(n_attempts):
+                try:
+                    baseline_perturbed_code, baseline_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=False)
+                    baseline_perturbed_code = autopep8.fix_code(baseline_perturbed_code)
+                    baseline_outputs = exec_with_mocked_io(baseline_perturbed_code, inputs, timeout=2)
+                    baseline_passes = outputs == format_outputs(baseline_outputs, allow_multiple_answers)
 
-    print("Passes APPS test case:", baseline_passes)
+                    baseline_results = {
+                        "perturbed_code": baseline_perturbed_code,
+                        "bug_category": baseline_bug_category,
+                        "modified_lines": get_modified_lines(solution, baseline_perturbed_code),
+                        "passes_test_case": baseline_passes
+                    }
+                    break
+                except:
+                    print("Retrying...", attempt)
+            
+            if not baseline_results:
+                continue
+            
+            for attempt in range(n_attempts):
+                try:
+                    exemplar_perturbed_code, exemplar_bug_category = bug_insertion_model.insert_bug(question, solution, use_exemplars=True, n=3)
+                    exemplar_perturbed_code = autopep8.fix_code(exemplar_perturbed_code)
+                    exemplar_outputs = exec_with_mocked_io(exemplar_perturbed_code, inputs, timeout=2)
+                    exemplar_passes = outputs == format_outputs(exemplar_outputs, allow_multiple_answers)
 
-    print(exemplar_perturbed_code)
-    print(exemplar_bug_category)
-    print(get_modified_lines(solution, exemplar_perturbed_code))
+                    exemplar_results = {
+                        "perturbed_code": exemplar_perturbed_code,
+                        "bug_category": exemplar_bug_category,
+                        "modified_lines": get_modified_lines(solution, exemplar_perturbed_code),
+                        "passes_test_case": exemplar_passes
+                    }
+                    break
+                except:
+                    print("Retrying...", attempt)
 
-    exemplar_outputs = exec_with_mocked_io(exemplar_perturbed_code, inputs, timeout=2)
-    exemplar_passes = outputs == format_outputs(exemplar_outputs, allow_multiple_answers)
+            if not exemplar_results:
+                continue
 
-    # print(outputs)
-    # print("-------------")
-    # print(exemplar_outputs)
+            results.append({
+                "baseline": baseline_results,
+                "exemplar": exemplar_results,
+                "sample_path": sample_path,
+                "solution_index": index
+            })
 
-    print("Passes APPS test case:", exemplar_passes)
+            # print("Passes APPS test case:", exemplar_passes)
+
+    with open("metacognition/outputs/diversity_results.json", "w") as fp:
+        json.dump(results, fp)
