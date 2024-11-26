@@ -14,11 +14,7 @@ import autopep8
 import os
 import random
 from tqdm import tqdm
-
-def warn(*args, **kwargs):
-    pass
-import warnings
-warnings.warn = warn
+import pandas as pd
 
 load_dotenv()
 
@@ -103,8 +99,9 @@ class OpenAIBugInsertion(BugInsertionModel):
                 provide_bug(perturbed_code, diff_output)
             ], model="gpt-4o")
 
-            tfidf_vector = self.vectorizer.transform([response["label"]])
-            predicted_cluster_num = self.kmeans.predict(tfidf_vector)[0]
+            tfidf_vector = self.vectorizer.transform([response["label"].replace('_', ' ')])
+            tfidf_df = pd.DataFrame(tfidf_vector.toarray(), columns=self.vectorizer.get_feature_names_out())
+            predicted_cluster_num = self.kmeans.predict(tfidf_df)[0]
             cluster_label = self.library[predicted_cluster_num]["cluster_label"]
 
             return perturbed_code, cluster_label
@@ -298,8 +295,9 @@ if __name__ == "__main__":
                         "passes_test_case": baseline_passes
                     }
                     break
-                except:
+                except Exception as e:
                     print("Retrying...", attempt)
+                    print(e)
             
             if not baseline_results:
                 continue
