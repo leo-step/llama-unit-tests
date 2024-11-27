@@ -296,8 +296,15 @@ if __name__ == "__main__":
                     }
                     break
                 except Exception as e:
-                    print("Retrying...", attempt)
+                    print("Baseline retrying...", attempt)
                     print(e)
+                    print(baseline_bug_category)
+                    with open("metacognition/outputs/solution.py", 'w') as fp:
+                        fp.write(solution)
+                    with open("metacognition/outputs/error.py", 'w') as fp:
+                        fp.write(baseline_perturbed_code)
+                    print("Enter a character to continue...", end='')
+                    input()
             
             if not baseline_results:
                 continue
@@ -316,8 +323,16 @@ if __name__ == "__main__":
                         "passes_test_case": exemplar_passes
                     }
                     break
-                except:
-                    print("Retrying...", attempt)
+                except Exception as e:
+                    print("Exemplar retrying...", attempt)
+                    print(e)
+                    print(exemplar_bug_category)
+                    with open("metacognition/outputs/solution.py", 'w') as fp:
+                        fp.write(solution)
+                    with open("metacognition/outputs/error.py", 'w') as fp:
+                        fp.write(exemplar_perturbed_code)
+                    print("Enter a character to continue...", end='')
+                    input()
 
             if not exemplar_results:
                 continue
